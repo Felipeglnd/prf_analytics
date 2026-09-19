@@ -1,0 +1,21 @@
+# Byte-compiled / Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Dados
+data/
+*.csv
+
+# IDE / Editores
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
+# Streamlit local
+.streamlit/secrets.toml
