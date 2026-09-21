@@ -1,7 +1,18 @@
-import os
-from typing import List, Optional
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+
 import gdown
 import pandas as pd
+import streamlit as st
+
+# Configuração do Logger
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Diretório raiz do projeto (subindo um nível a partir de 'src')
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 # ==============================================================================
 # LISTA PADRÃO DE IDS DO GOOGLE DRIVE
@@ -13,41 +24,57 @@ DEFAULT_DRIVE_IDS = [
 ]
 
 
-def load_data(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
-    """Baixa (se necessário) e unifica os arquivos CSV do Google Drive."""
+def carregar_geojson(caminho_geojson: Union[Path, str] = ROOT_DIR / "data" / "br_states.json") -> Dict:
+    """Carrega o arquivo GeoJSON com os contornos dos estados do Brasil."""
+    caminho = Path(caminho_geojson)
+    
+    if not caminho.exists():
+        logger.error(f"Arquivo GeoJSON não encontrado em: {caminho}")
+        raise FileNotFoundError(f"Arquivo GeoJSON não encontrado: {caminho}")
+
+    with open(caminho, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+@st.cache_data(show_spinner="Carregando e processando dados da PRF...")
+def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
+    """Baixa (se necessário), unifica e trata os arquivos CSV do Google Drive."""
     if file_ids is None:
         file_ids = DEFAULT_DRIVE_IDS
 
-    raw_dir = os.path.join('data', 'raw')
-    os.makedirs(raw_dir, exist_ok=True)
+    raw_dir = ROOT_DIR / "data" / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
 
     list_dfs = []
 
     for idx, file_id in enumerate(file_ids, start=1):
-        local_path = os.path.join(raw_dir, f'prf_data_{file_id}.csv')
+        local_path = raw_dir / f"prf_data_{file_id}.csv"
 
-        # Realiza o download se o arquivo local não existir
-        if not os.path.exists(local_path):
-            print(
-                f'Baixando arquivo {idx}/{len(file_ids)} do Google Drive (ID:'
-                f' {file_id})...'
-            )
+        # Download via gdown se o arquivo não existir ou estiver corrompido/vazio
+        if not local_path.exists() or local_path.stat().st_size == 0:
+            logger.info(f"Baixando base PRF {idx}/{len(file_ids)} do Google Drive (ID: {file_id})...")
             try:
-                gdown.download(id=file_id, output=local_path, quiet=False)
+                gdown.download(id=file_id, output=str(local_path), quiet=True)
             except Exception as err:
-                print(f'Erro no gdown ao baixar o ID {file_id}: {err}')
+                logger.error(f"Erro no gdown ao baixar o ID {file_id}: {err}")
 
-        # Tenta ler o arquivo CSV
-        if os.path.exists(local_path):
+        # Leitura do arquivo CSV com tratamentos de segurança
+        if local_path.exists() and local_path.stat().st_size > 0:
             try:
-                print(f'Lendo arquivo {idx}/{len(file_ids)}: {local_path}...')
                 df_temp = pd.read_csv(
-                    local_path, sep=';', encoding='latin1', low_memory=False
+                    local_path,
+                    sep=';',
+                    encoding='latin1',
+                    low_memory=False,
+                    on_bad_lines='skip',
                 )
                 df_temp.columns = df_temp.columns.str.lower().str.strip()
                 list_dfs.append(df_temp)
             except Exception as err:
-                print(f'Erro ao ler o arquivo {local_path}: {err}')
+                logger.error(f"Erro ao ler o arquivo {local_path}: {err}")
+                # Remove o arquivo potencialmente corrompido para nova tentativa futura
+                if local_path.exists():
+                    local_path.unlink(missing_ok=True)
 
     if not list_dfs:
         raise ValueError(
@@ -55,25 +82,35 @@ def load_data(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
             ' permissões dos IDs no Google Drive.'
         )
 
-    print('Unificando bases...')
     df_unified = pd.concat(list_dfs, ignore_index=True)
 
-    # Tratamento seguro das coordenadas geográficas
+    # Tratamento de coordenadas geográficas
     for col in ['latitude', 'longitude']:
         if col in df_unified.columns:
-            df_unified[col] = df_unified[col].astype(str).str.replace(',', '.')
+            df_unified[col] = (
+                df_unified[col]
+                .astype(str)
+                .str.replace(',', '.', regex=False)
+            )
             df_unified[col] = pd.to_numeric(df_unified[col], errors='coerce')
 
-    # Tratamento de datas
+    # Garantir pré-tratamento numérico das colunas de métricas/KPIs
+    colunas_kpi = ['mortos', 'feridos_graves', 'feridos_leves', 'feridos', 'pessoas']
+    for col in colunas_kpi:
+        if col in df_unified.columns:
+            df_unified[col] = pd.to_numeric(df_unified[col], errors='coerce').fillna(0)
+
+    # Tratamento de datas e extração de metadados temporais
     if 'data_inversa' in df_unified.columns:
         df_unified['data_inversa'] = pd.to_datetime(
             df_unified['data_inversa'], errors='coerce'
         )
-        df_unified['ano'] = df_unified['data_inversa'].dt.year
-        df_unified['mes'] = df_unified['data_inversa'].dt.month
-        df_unified['mes_ano'] = (
-            df_unified['data_inversa'].dt.to_period('M').astype(str)
-        )
+        df_unified['ano_base'] = df_unified['data_inversa'].dt.year
+        df_unified['mes_num'] = df_unified['data_inversa'].dt.month
+        df_unified['mes'] = df_unified['data_inversa'].dt.to_period('M').astype(str)
 
-    print(f'Sucesso! Base unificada com {len(df_unified):,} linhas.')
     return df_unified
+
+
+# Alias para compatibilidade
+load_data = carregar_dados
