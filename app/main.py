@@ -11,7 +11,7 @@ RAIZ_PROJETO = Path(__file__).resolve().parent.parent
 if str(RAIZ_PROJETO) not in sys.path:
     sys.path.append(str(RAIZ_PROJETO))
 
-from src.data_loader import carregar_dados
+from src.data_loader import carregar_dados, carregar_geojson
 
 # ==========================================
 # 1. Configurações Globais e Paleta PRF
@@ -36,6 +36,17 @@ MESES_MAP = {
     1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
     7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
 }
+
+# Lista com hífens e maiúsculas padronizadas após o .str.title()
+ORDEM_DIAS = [
+    "Domingo",
+    "Segunda-Feira",
+    "Terça-Feira",
+    "Quarta-Feira",
+    "Quinta-Feira",
+    "Sexta-Feira",
+    "Sábado",
+]
 
 # Estilização CSS personalizada
 st.markdown(
@@ -81,19 +92,35 @@ def aplicar_tema_grafico(fig):
 # ==========================================
 df = carregar_dados()
 
-# Garantir tipos de dados pré-processados para otimizar requisições repetidas
+try:
+    geojson_br = carregar_geojson()
+except Exception as e:
+    geojson_br = None
+    st.warning(f"Não foi possível carregar o arquivo GeoJSON para o mapa: {e}")
+
+# Garantir tipos de dados pré-processados
 if 'data_inversa' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['data_inversa']):
     df['data_inversa'] = pd.to_datetime(df['data_inversa'])
 
 if 'mes_num' not in df.columns and 'data_inversa' in df.columns:
     df['mes_num'] = df['data_inversa'].dt.month
 
+# Pré-processamento da coluna de dia da semana
+if 'dia_semana' in df.columns:
+    df['dia_nome'] = df['dia_semana'].astype(str).str.title()
+elif 'data_inversa' in df.columns:
+    dias_map = {
+        0: "Segunda-Feira", 1: "Terça-Feira", 2: "Quarta-Feira",
+        3: "Quinta-Feira", 4: "Sexta-Feira", 5: "Sábado", 6: "Domingo"
+    }
+    df['dia_nome'] = df['data_inversa'].dt.dayofweek.map(dias_map)
+
 # ==========================================
 # 3. Sidebar - Filtros Interativos
 # ==========================================
 st.sidebar.image(
-    "https://upload.wikimedia.org/wikipedia/commons/e/e0/Bras%C3%A3o_da_Pol%C3%ADcia_Rodovi%C3%A1ria_Federal.png",
-    width=120,
+    "https://whitecube.com.br/wp-content/uploads/2026/04/social-share.png",
+    width=260,
 )
 st.sidebar.title("Filtros Analíticos")
 
@@ -157,6 +184,7 @@ st.markdown("---")
 if df_filtrado.empty:
     st.warning("Nenhum dado encontrado para os filtros selecionados.")
 else:
+    # Linha 1: Evolução Mensal e Principais Causas
     col1, col2 = st.columns(2)
 
     with col1:
@@ -183,7 +211,7 @@ else:
             ],
         )
         fig_line.update_layout(xaxis_title="Mês", yaxis_title="Volume de Acidentes")
-        st.plotly_chart(aplicar_tema_grafico(fig_line), use_container_width=True)
+        st.plotly_chart(aplicar_tema_grafico(fig_line), width="stretch")
 
     with col2:
         st.subheader("Principais Causas de Acidentes")
@@ -210,8 +238,9 @@ else:
             xaxis_title="",
             yaxis_title="",
         )
-        st.plotly_chart(aplicar_tema_grafico(fig_bar), use_container_width=True)
+        st.plotly_chart(aplicar_tema_grafico(fig_bar), width="stretch")
 
+    # Linha 2: Gravidade e Óbitos por UF
     col3, col4 = st.columns(2)
 
     with col3:
@@ -231,32 +260,134 @@ else:
                 CORES_PRF['dourado_destaque'],
             ],
         )
-        st.plotly_chart(aplicar_tema_grafico(fig_donut), use_container_width=True)
+        st.plotly_chart(aplicar_tema_grafico(fig_donut), width="stretch")
 
     with col4:
-        st.subheader("Acidentes Fatais por UF")
+        st.subheader("Mapa Coroplético: Óbitos por UF")
 
         uf_fatais = (
             df_filtrado.groupby('uf')['mortos']
             .sum()
             .reset_index()
-            .sort_values('mortos', ascending=False)
         )
 
-        fig_uf = px.bar(
-            uf_fatais,
-            x='uf',
-            y='mortos',
-            color='mortos',
-            color_continuous_scale=[
-                CORES_PRF['creme'],
-                CORES_PRF['amarelo_ouro'],
-                CORES_PRF['azul_marinho'],
-            ],
+        if geojson_br:
+            fig_uf_mapa = px.choropleth(
+                uf_fatais,
+                geojson=geojson_br,
+                locations='uf',
+                featureidkey='properties.sigla',
+                color='mortos',
+                color_continuous_scale=[
+                    CORES_PRF['creme'],
+                    CORES_PRF['amarelo_ouro'],
+                    CORES_PRF['vermelho'],
+                ],
+                labels={'mortos': 'Óbitos', 'uf': 'UF'},
+            )
+            fig_uf_mapa.update_geos(fitbounds="locations", visible=False)
+            st.plotly_chart(aplicar_tema_grafico(fig_uf_mapa), width="stretch")
+        else:
+            fig_uf = px.bar(
+                uf_fatais.sort_values('mortos', ascending=False),
+                x='uf',
+                y='mortos',
+                color='mortos',
+                color_continuous_scale=[
+                    CORES_PRF['creme'],
+                    CORES_PRF['amarelo_ouro'],
+                    CORES_PRF['azul_marinho'],
+                ],
+            )
+            fig_uf.update_layout(xaxis_title="Estado (UF)", yaxis_title="Total de Óbitos", coloraxis_showscale=False)
+            st.plotly_chart(aplicar_tema_grafico(fig_uf), width="stretch")
+
+    # Linha 3: Dia da Semana e Top Rodovias (BRs)
+    col5, col6 = st.columns(2)
+
+    with col5:
+        st.subheader("Acidentes por Dia da Semana")
+
+        if 'dia_nome' in df_filtrado.columns:
+            acidentes_dia = (
+                df_filtrado.groupby('dia_nome')
+                .size()
+                .reindex(ORDEM_DIAS, fill_value=0)
+                .reset_index(name='total')
+            )
+
+            fig_dias = px.bar(
+                acidentes_dia,
+                x='dia_nome',
+                y='total',
+                labels={'dia_nome': 'Dia da Semana', 'total': 'Total de Acidentes'},
+                color='total',
+                color_continuous_scale=[
+                    CORES_PRF['azul_marinho'],
+                    CORES_PRF['amarelo_ouro'],
+                    CORES_PRF['vermelho'],
+                ],
+            )
+            fig_dias.update_layout(
+                xaxis_title="",
+                yaxis_title="Total de Acidentes",
+                coloraxis_showscale=False,
+            )
+            st.plotly_chart(aplicar_tema_grafico(fig_dias), width="stretch")
+
+    with col6:
+        st.subheader("Top 5 Rodovias (BRs) com Mais Acidentes")
+
+        if 'br' in df_filtrado.columns:
+            df_brs = df_filtrado.dropna(subset=['br']).copy()
+            df_brs['br'] = "BR-" + df_brs['br'].astype(str).str.split('.').str[0].str.zfill(3)
+            top_brs = df_brs['br'].value_counts().head(5).reset_index()
+            top_brs.columns = ['Rodovia', 'Total']
+
+            fig_brs = px.bar(
+                top_brs,
+                x='Total',
+                y='Rodovia',
+                orientation='h',
+                color_discrete_sequence=[CORES_PRF['azul_marinho']],
+            )
+            if len(fig_brs.data) > 0:
+                fig_brs.data[0].marker.color = [
+                    CORES_PRF['dourado_destaque'] if i == 0 else CORES_PRF['azul_marinho']
+                    for i in range(len(top_brs))
+                ]
+            fig_brs.update_layout(
+                yaxis={'categoryorder': 'total ascending'},
+                xaxis_title="",
+                yaxis_title="",
+            )
+            st.plotly_chart(aplicar_tema_grafico(fig_brs), width="stretch")
+
+    # ==========================================
+    # 6. Seção Expandida - Mapeamento Geográfico Detalhado
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📍 Mapeamento Geográfico de Ocorrências (Latitude / Longitude)")
+
+    df_coords = df_filtrado.dropna(subset=['latitude', 'longitude'])
+
+    if not df_coords.empty:
+        if len(df_coords) > 10000:
+            st.caption("Exibindo amostragem de 10.000 pontos para garantir alta performance.")
+            df_coords = df_coords.sample(10000, random_state=42)
+
+        fig_scatter_map = px.scatter_map(
+            df_coords,
+            lat='latitude',
+            lon='longitude',
+            color='classificacao_acidente' if 'classificacao_acidente' in df_coords.columns else None,
+            hover_name='municipio' if 'municipio' in df_coords.columns else 'uf',
+            hover_data=['br', 'km', 'mortos'] if 'br' in df_coords.columns else ['mortos'],
+            zoom=3.5,
+            center={"lat": -14.2350, "lon": -51.9253},
+            map_style="carto-darkmatter",
         )
-        fig_uf.update_layout(
-            xaxis_title="Estado (UF)",
-            yaxis_title="Total de Óbitos",
-            coloraxis_showscale=False,
-        )
-        st.plotly_chart(aplicar_tema_grafico(fig_uf), use_container_width=True)
+        fig_scatter_map.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+        st.plotly_chart(aplicar_tema_grafico(fig_scatter_map), width="stretch")
+    else:
+        st.warning("Não há coordenadas geográficas válidas para os filtros selecionados.")

@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import urllib.request
 
 import gdown
 import pandas as pd
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 # Diretório raiz do projeto (subindo um nível a partir de 'src')
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
+# URL pública de fallback para o GeoJSON dos estados do Brasil
+GEOJSON_URL = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+
 # ==============================================================================
 # LISTA PADRÃO DE IDS DO GOOGLE DRIVE
 # ==============================================================================
@@ -24,13 +28,19 @@ DEFAULT_DRIVE_IDS = [
 ]
 
 
+@st.cache_data(show_spinner="Carregando GeoJSON dos estados...")
 def carregar_geojson(caminho_geojson: Union[Path, str] = ROOT_DIR / "data" / "br_states.json") -> Dict:
-    """Carrega o arquivo GeoJSON com os contornos dos estados do Brasil."""
+    """Carrega o arquivo GeoJSON dos estados do Brasil. Se não existir, faz o download automático."""
     caminho = Path(caminho_geojson)
     
     if not caminho.exists():
-        logger.error(f"Arquivo GeoJSON não encontrado em: {caminho}")
-        raise FileNotFoundError(f"Arquivo GeoJSON não encontrado: {caminho}")
+        logger.info(f"GeoJSON não encontrado em {caminho}. Baixando automaticamente...")
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            urllib.request.urlretrieve(GEOJSON_URL, caminho)
+        except Exception as err:
+            logger.error(f"Erro ao baixar o GeoJSON: {err}")
+            raise FileNotFoundError(f"Arquivo GeoJSON não encontrado e falha ao baixar: {err}")
 
     with open(caminho, 'r', encoding='utf-8') as f:
         return json.load(f)
@@ -50,7 +60,6 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
     for idx, file_id in enumerate(file_ids, start=1):
         local_path = raw_dir / f"prf_data_{file_id}.csv"
 
-        # Download via gdown se o arquivo não existir ou estiver corrompido/vazio
         if not local_path.exists() or local_path.stat().st_size == 0:
             logger.info(f"Baixando base PRF {idx}/{len(file_ids)} do Google Drive (ID: {file_id})...")
             try:
@@ -58,7 +67,6 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
             except Exception as err:
                 logger.error(f"Erro no gdown ao baixar o ID {file_id}: {err}")
 
-        # Leitura do arquivo CSV com tratamentos de segurança
         if local_path.exists() and local_path.stat().st_size > 0:
             try:
                 df_temp = pd.read_csv(
@@ -72,7 +80,6 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
                 list_dfs.append(df_temp)
             except Exception as err:
                 logger.error(f"Erro ao ler o arquivo {local_path}: {err}")
-                # Remove o arquivo potencialmente corrompido para nova tentativa futura
                 if local_path.exists():
                     local_path.unlink(missing_ok=True)
 
@@ -94,13 +101,13 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
             )
             df_unified[col] = pd.to_numeric(df_unified[col], errors='coerce')
 
-    # Garantir pré-tratamento numérico das colunas de métricas/KPIs
+    # Tratamento de colunas de métricas
     colunas_kpi = ['mortos', 'feridos_graves', 'feridos_leves', 'feridos', 'pessoas']
     for col in colunas_kpi:
         if col in df_unified.columns:
             df_unified[col] = pd.to_numeric(df_unified[col], errors='coerce').fillna(0)
 
-    # Tratamento de datas e extração de metadados temporais
+    # Tratamento de datas
     if 'data_inversa' in df_unified.columns:
         df_unified['data_inversa'] = pd.to_datetime(
             df_unified['data_inversa'], errors='coerce'
@@ -112,5 +119,4 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
     return df_unified
 
 
-# Alias para compatibilidade
 load_data = carregar_dados
