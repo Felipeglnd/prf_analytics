@@ -92,10 +92,7 @@ def aplicar_tema_grafico(fig):
 # ==========================================
 # 2. Carga e Pré-processamento dos Dados
 # ==========================================
-# Carregamos os Acidentes (Utilizado para o dashboard atual)
 df = carregar_dados_acidentes()
-
-# Carregamos a Frota de Veículos (Guardado no Cache para uso na plataforma, se aplicável)
 df_veiculos = carregar_dados_veiculos()
 
 try:
@@ -145,12 +142,23 @@ texto_ufs = " | ".join(filtro_uf) if filtro_uf else "Todas as UFs"
 st.markdown(f"**Esses dados estão disponíveis na URL:** *https://www.gov.br/prf/pt-br/acesso-a-informacao/dados-abertos/dados-abertos-da-prf*")
 st.markdown(f"**Anos:** {texto_anos} — **UFs:** {texto_ufs}")
 
-total_acidentes = len(df_filtrado)
-total_obitos = df_filtrado['mortos'].sum() if 'mortos' in df_filtrado.columns and total_acidentes > 0 else 0
-total_feridos_graves = df_filtrado['feridos_graves'].sum() if 'feridos_graves' in df_filtrado.columns and total_acidentes > 0 else 0
+# Ajuste de Estatísticas à prova de linhas duplicadas
+if 'id' in df_filtrado.columns:
+    total_acidentes = df_filtrado['id'].nunique()
+else:
+    total_acidentes = len(df_filtrado)
+
+# Para vítimas, se a base for "Por Ocorrência", a soma está correta. 
+# Se houver risco de duplicação, seria ideal agrupar por 'id' primeiro. 
+# Assumindo o padrão PRF de ocorrência única por linha na base unificada:
+total_obitos = df_filtrado.drop_duplicates(subset=['id'])['mortos'].sum() if 'id' in df_filtrado.columns and 'mortos' in df_filtrado.columns else (df_filtrado['mortos'].sum() if 'mortos' in df_filtrado.columns else 0)
+total_feridos_graves = df_filtrado.drop_duplicates(subset=['id'])['feridos_graves'].sum() if 'id' in df_filtrado.columns and 'feridos_graves' in df_filtrado.columns else (df_filtrado['feridos_graves'].sum() if 'feridos_graves' in df_filtrado.columns else 0)
 
 if total_acidentes > 0 and 'classificacao_acidente' in df_filtrado.columns:
-    acidentes_fatais = (df_filtrado['classificacao_acidente'] == 'Com Vítimas Fatais').sum()
+    if 'id' in df_filtrado.columns:
+        acidentes_fatais = df_filtrado[df_filtrado['classificacao_acidente'] == 'Com Vítimas Fatais']['id'].nunique()
+    else:
+        acidentes_fatais = (df_filtrado['classificacao_acidente'] == 'Com Vítimas Fatais').sum()
     tx_fatalidade = (acidentes_fatais / total_acidentes) * 100
 else:
     tx_fatalidade = 0.0
@@ -179,7 +187,12 @@ else:
 
         with col_g1:
             st.markdown("##### Evolução Mensal de Acidentes")
-            evolucao = df_filtrado.groupby(['mes_num', 'ano_base']).size().reset_index(name='total')
+            # Ajuste para contar IDs únicos
+            if 'id' in df_filtrado.columns:
+                evolucao = df_filtrado.groupby(['mes_num', 'ano_base'])['id'].nunique().reset_index(name='total')
+            else:
+                evolucao = df_filtrado.groupby(['mes_num', 'ano_base']).size().reset_index(name='total')
+                
             evolucao['mes_nome'] = evolucao['mes_num'].map(MESES_MAP)
             evolucao['ano_base'] = evolucao['ano_base'].astype(str)
 
@@ -193,7 +206,9 @@ else:
 
         with col_g2:
             st.markdown("##### Mapa Coroplético: Óbitos por UF")
-            uf_fatais = df_filtrado.groupby('uf')['mortos'].sum().reset_index()
+            # Usa deduplicação para garantir óbitos reais (sem sobreposição)
+            df_unique = df_filtrado.drop_duplicates(subset=['id']) if 'id' in df_filtrado.columns else df_filtrado
+            uf_fatais = df_unique.groupby('uf')['mortos'].sum().reset_index()
 
             if geojson_br:
                 fig_uf_mapa = px.choropleth(
@@ -214,7 +229,7 @@ else:
         st.markdown("---")
         st.subheader("📍 Mapeamento Geográfico de Ocorrências (Latitude / Longitude)")
 
-        df_coords = df_filtrado.dropna(subset=['latitude', 'longitude'])
+        df_coords = df_filtrado.drop_duplicates(subset=['id']).dropna(subset=['latitude', 'longitude']) if 'id' in df_filtrado.columns else df_filtrado.dropna(subset=['latitude', 'longitude'])
 
         if not df_coords.empty:
             if len(df_coords) > 10000:
@@ -237,11 +252,13 @@ else:
     with tab_vitimas:
         st.subheader("Análise do Perfil das Vítimas e Gravidade")
         col_v1, col_v2 = st.columns(2)
+        
+        df_unique_acidentes = df_filtrado.drop_duplicates(subset=['id']) if 'id' in df_filtrado.columns else df_filtrado
 
         with col_v1:
             st.markdown("##### Classificação de Gravidade das Ocorrências")
-            if 'classificacao_acidente' in df_filtrado.columns:
-                gravidade = df_filtrado['classificacao_acidente'].value_counts().reset_index()
+            if 'classificacao_acidente' in df_unique_acidentes.columns:
+                gravidade = df_unique_acidentes['classificacao_acidente'].value_counts().reset_index()
                 gravidade.columns = ['Classificação', 'Total']
 
                 fig_donut = px.pie(
@@ -253,8 +270,8 @@ else:
 
         with col_v2:
             st.markdown("##### Total de Feridos Graves vs Óbitos por UF")
-            if 'uf' in df_filtrado.columns and 'mortos' in df_filtrado.columns:
-                df_vitimas_uf = df_filtrado.groupby('uf')[['mortos', 'feridos_graves']].sum().reset_index().sort_values('mortos', ascending=False).head(10)
+            if 'uf' in df_unique_acidentes.columns and 'mortos' in df_unique_acidentes.columns:
+                df_vitimas_uf = df_unique_acidentes.groupby('uf')[['mortos', 'feridos_graves']].sum().reset_index().sort_values('mortos', ascending=False).head(10)
                 fig_vit_bar = px.bar(
                     df_vitimas_uf, x='uf', y=['mortos', 'feridos_graves'], barmode='group',
                     labels={'value': 'Quantidade', 'variable': 'Métrica', 'uf': 'UF'},
@@ -293,14 +310,16 @@ else:
     with tab_acidentes:
         st.subheader("Análise Operacional das Ocorrências")
         col_a1, col_a2 = st.columns(2)
+        
+        df_unique_operacional = df_filtrado.drop_duplicates(subset=['id']) if 'id' in df_filtrado.columns else df_filtrado
 
         with col_a1:
             st.markdown("##### Principais Causas de Acidentes")
-            if 'causa_acidente' in df_filtrado.columns:
-                causas_unicas = sorted(df_filtrado['causa_acidente'].dropna().unique())
+            if 'causa_acidente' in df_unique_operacional.columns:
+                causas_unicas = sorted(df_unique_operacional['causa_acidente'].dropna().unique())
                 causas_selecionadas = st.multiselect("Buscar causa(s) específica(s):", options=causas_unicas, default=[], placeholder="Digite para filtrar causas...", key="filtro_causas_multiselect")
 
-                df_causas = df_filtrado.copy()
+                df_causas = df_unique_operacional.copy()
                 if causas_selecionadas:
                     df_causas = df_causas[df_causas['causa_acidente'].isin(causas_selecionadas)]
 
@@ -317,8 +336,8 @@ else:
 
         with col_a2:
             st.markdown("##### Top Rodovias (BRs) com Mais Acidentes")
-            if 'br' in df_filtrado.columns:
-                df_brs = df_filtrado.dropna(subset=['br']).copy()
+            if 'br' in df_unique_operacional.columns:
+                df_brs = df_unique_operacional.dropna(subset=['br']).copy()
                 df_brs['br'] = "BR-" + df_brs['br'].astype(str).str.split('.').str[0].str.zfill(3)
                 top_brs = df_brs['br'].value_counts().head(10).reset_index()
                 top_brs.columns = ['Rodovia', 'Total']
@@ -333,8 +352,8 @@ else:
 
         with col_a3:
             st.markdown("##### Acidentes por Hora do Dia")
-            if 'hora' in df_filtrado.columns:
-                acidentes_hora = df_filtrado.groupby('hora').size().reindex(range(24), fill_value=0).reset_index(name='total')
+            if 'hora' in df_unique_operacional.columns:
+                acidentes_hora = df_unique_operacional.groupby('hora').size().reindex(range(24), fill_value=0).reset_index(name='total')
                 acidentes_hora['hora_label'] = acidentes_hora['hora'].apply(lambda x: f"{int(x):02d}h")
 
                 fig_hora = px.bar(acidentes_hora, x='hora_label', y='total', labels={'hora_label': 'Hora do Dia', 'total': 'Total de Acidentes'}, color_discrete_sequence=[CORES_DASHBOARD['azul_escuro']])
@@ -343,8 +362,8 @@ else:
 
         with col_a4:
             st.markdown("##### Acidentes por Dia da Semana")
-            if 'dia_nome' in df_filtrado.columns:
-                acidentes_dia = df_filtrado.groupby('dia_nome').size().reindex(ORDEM_DIAS, fill_value=0).reset_index(name='total')
+            if 'dia_nome' in df_unique_operacional.columns:
+                acidentes_dia = df_unique_operacional.groupby('dia_nome').size().reindex(ORDEM_DIAS, fill_value=0).reset_index(name='total')
                 fig_dias = px.bar(acidentes_dia, x='dia_nome', y='total', labels={'dia_nome': 'Dia da Semana', 'total': 'Total de Acidentes'}, color_discrete_sequence=[CORES_DASHBOARD['azul_escuro']])
                 fig_dias.update_layout(xaxis_title="", yaxis_title="Total de Acidentes")
                 st.plotly_chart(aplicar_tema_grafico(fig_dias), use_container_width=True)
