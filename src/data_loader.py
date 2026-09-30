@@ -107,10 +107,6 @@ def carregar_dados_acidentes() -> pd.DataFrame:
     return df_unified
 
 
-<<<<<<< HEAD
-load_data = carregar_dados
-
-
 # Ids das bases novas
 BASES_ADICIONAIS = {
     'frota_media_consolidada_2023_2025': '1H8CHfMJbwDLCxzi6zwR7ulUmleaOZKij',
@@ -156,7 +152,8 @@ def carregar_bases_adicionais() -> Dict[str, pd.DataFrame]:
                 logger.error(f"Erro ao ler o arquivo {arquivo_path}: {err}")
 
     return dicionario_dfs
-=======
+
+
 @st.cache_data(show_spinner="Carregando e guardando em cache a base consolidada de veículos...")
 def carregar_dados_veiculos() -> pd.DataFrame:
     """Baixa (se necessário) a base consolidada de frota de veículos do Google Drive."""
@@ -186,4 +183,3 @@ def carregar_dados_veiculos() -> pd.DataFrame:
 
 # Alias para não quebrar compatibilidade
 carregar_dados = carregar_dados_acidentes
->>>>>>> eb193cc6b64011c8ef1a0e220f83ba18a1793cad
