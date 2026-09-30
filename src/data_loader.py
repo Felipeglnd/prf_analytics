@@ -135,7 +135,6 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
     return df_unified
 
 
-<<<<<<< HEAD
 # ==============================================================================
 # CARGA DE BASES COMPLEMENTARES DO GOOGLE DRIVE
 # ==============================================================================
@@ -143,58 +142,6 @@ def carregar_dados(file_ids: Optional[List[str]] = None) -> pd.DataFrame:
 @st.cache_data(show_spinner="Carregando dados da frota de veículos...")
 def carregar_frota(file_id: str = FROTA_DRIVE_ID) -> pd.DataFrame:
     """Baixa (se necessário) e carrega a base de frota agrupada por estado do Google Drive."""
-=======
-# Ids das bases novas
-BASES_ADICIONAIS = {
-    'frota_media_consolidada_2023_2025': '1H8CHfMJbwDLCxzi6zwR7ulUmleaOZKij',
-    'frota_agrupada_por_estado_2023_2025': '1vkXWiFWymu52T9Uytu1PSj3nx-SRY8Jj'
-}
-
-@st.cache_data(show_spinner="Carregando bases adicionais...")
-def carregar_bases_adicionais() -> Dict[str, pd.DataFrame]:
-    """
-    Baixa arquivos extras do Google Drive e os retorna
-    em um dicionário de DataFrames, sem concatenar.
-    """
-    raw_dir = ROOT_DIR / "data" / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-
-    dicionario_dfs = {}
-
-    for nome_base, file_id in BASES_ADICIONAIS.items():
-        arquivo_path = raw_dir / f"{nome_base}.csv"
-
-        # Baixa do Drive se o arquivo não existir localmente
-        if not arquivo_path.exists() or arquivo_path.stat().st_size == 0:
-            logger.info(f"Baixando '{nome_base}' do Google Drive (ID: {file_id})...")
-            try:
-                gdown.download(id=file_id, output=str(arquivo_path), quiet=False)
-            except Exception as err:
-                logger.error(f"Erro ao baixar a base '{nome_base}' (ID {file_id}): {err}")
-                continue
-
-        # Carrega o arquivo baixado
-        if arquivo_path.exists() and arquivo_path.stat().st_size > 0:
-            try:
-                df = pd.read_csv(
-                    arquivo_path,
-                    sep=';', 
-                    encoding='latin1',
-                    low_memory=False,
-                    on_bad_lines='skip'
-                )
-                dicionario_dfs[nome_base] = df
-                logger.info(f"Base '{nome_base}' carregada com sucesso.")
-            except Exception as err:
-                logger.error(f"Erro ao ler o arquivo {arquivo_path}: {err}")
-
-    return dicionario_dfs
-
-
-@st.cache_data(show_spinner="Carregando e guardando em cache a base consolidada de veículos...")
-def carregar_dados_veiculos() -> pd.DataFrame:
-    """Baixa (se necessário) a base consolidada de frota de veículos do Google Drive."""
->>>>>>> 43d799f0c5d5be3ec6de482f369a98657abe125b
     raw_dir = ROOT_DIR / "data" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     local_path = raw_dir / "frota_agrupada_por_estado_2023_2025.csv"
