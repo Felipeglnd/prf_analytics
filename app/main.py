@@ -353,6 +353,7 @@ if total_acidentes > 0:
         acidentes_fatais = 0
         
     tx_fatalidade = (acidentes_fatais / total_acidentes) * 100
+    tx_fatalidade = min(tx_fatalidade, 100.0) # Garante que a taxa não ultrapasse 100%
 else:
     tx_fatalidade = 0.0
 
