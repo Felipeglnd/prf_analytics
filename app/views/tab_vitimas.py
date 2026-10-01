@@ -191,7 +191,7 @@ def render_tab_vitimas(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
                 color_discrete_map={
                     'Masculino': CORES_DASHBOARD['azul_medio'],
                     'Feminino': '#C71585',
-                    'Não Informado': CORES_DASHBOARD['azul_borda'],
+                    'Não Informado': CORES_DASHBOARD['cinza_borda'],
                 }
             )
             fig_sexo.update_traces(textposition='outside')
