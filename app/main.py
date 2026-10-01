@@ -413,6 +413,160 @@ else:
                     fig_uf.update_layout(xaxis_title="Estado (UF)", yaxis_title="Total de Óbitos", coloraxis_showscale=False)
                     st.plotly_chart(aplicar_tema_grafico(fig_uf), use_container_width=True)
 
+        # =====================================================================
+        # NOVA SEÇÃO: Frota vs Acidentes & Condições Meteorológicas
+        # =====================================================================
+        st.markdown("---")
+        
+        col_g3, col_g4 = st.columns(2)
+
+        with col_g3:
+            st.markdown("##### Taxa de Acidentes vs Frota (por UF)")
+            st.caption("Acidentes (ID único) a cada 10 mil veículos registrados no estado")
+            
+            if 'uf' in df_filtrado.columns and not df_frota.empty:
+                # 1. Total de Acidentes ÚNICOS por UF
+                if 'id' in df_filtrado.columns:
+                    acidentes_uf = df_filtrado.groupby('uf')['id'].nunique().reset_index()
+                    acidentes_uf.columns = ['uf', 'total_acidentes']
+                else:
+                    # Fallback caso a coluna ID não exista
+                    acidentes_uf = df_filtrado['uf'].value_counts().reset_index()
+                    acidentes_uf.columns = ['uf', 'total_acidentes']
+                
+                # 2. Filtrar e agregar a Frota por UF
+                df_frota_filtrada = df_frota.copy()
+                if filtro_ano and 'ano' in df_frota_filtrada.columns:
+                    df_frota_filtrada = df_frota_filtrada[df_frota_filtrada['ano'].isin(filtro_ano)]
+                
+                if 'qtd_veiculos' in df_frota_filtrada.columns:
+                    # Garantir que qtd_veiculos é numérico
+                    df_frota_filtrada['qtd_veiculos'] = pd.to_numeric(df_frota_filtrada['qtd_veiculos'], errors='coerce').fillna(0)
+                    frota_uf = df_frota_filtrada.groupby('uf')['qtd_veiculos'].sum().reset_index()
+                    
+                    # 3. Mesclar as duas bases e calcular a razão
+                    df_taxa_frota = pd.merge(acidentes_uf, frota_uf, on='uf', how='inner')
+                    df_taxa_frota = df_taxa_frota[df_taxa_frota['qtd_veiculos'] > 0].copy()
+                    
+                    # Cálculo: (Acidentes / Frota) * 10.000 para facilitar a leitura no gráfico
+                    df_taxa_frota['taxa_10k'] = (df_taxa_frota['total_acidentes'] / df_taxa_frota['qtd_veiculos']) * 10000
+                    
+                    if not df_taxa_frota.empty:
+                        # Ordenar para o gráfico de barras
+                        df_taxa_frota = df_taxa_frota.sort_values('taxa_10k', ascending=True)
+                        altura_grafico = max(300, len(df_taxa_frota) * 26)
+                        max_taxa = df_taxa_frota['taxa_10k'].max()
+                        
+                        fig_taxa_f = px.bar(
+                            df_taxa_frota,
+                            x='taxa_10k',
+                            y='uf',
+                            orientation='h',
+                            text='taxa_10k',
+                            labels={
+                                'taxa_10k': 'Acidentes por 10 mil veículos',
+                                'uf': 'UF'
+                            },
+                            color_discrete_sequence=[CORES_DASHBOARD['azul_escuro']]
+                        )
+                        
+                        fig_taxa_f = aplicar_tema_grafico(fig_taxa_f)
+                        
+                        fig_taxa_f.update_traces(
+                            texttemplate='%{text:.2f}', 
+                            textposition='outside', 
+                            cliponaxis=False,
+                            textfont=dict(color=CORES_DASHBOARD['texto_escuro'], size=10)
+                        )
+                        
+                        fig_taxa_f.update_layout(
+                            yaxis={
+                                'categoryorder': 'total ascending',
+                                'tickfont': dict(size=11),
+                                'automargin': True
+                            },
+                            xaxis=dict(
+                                range=[0, max_taxa * 1.15],
+                                showgrid=True,
+                                zeroline=False
+                            ),
+                            xaxis_title="",
+                            yaxis_title="",
+                            margin=dict(l=0, r=40, t=10, b=10),
+                            height=altura_grafico
+                        )
+                        
+                        with st.container(height=380):
+                            st.plotly_chart(fig_taxa_f, use_container_width=True)
+                    else:
+                        st.info("Não foi possível correlacionar os dados de frota e acidentes para os filtros selecionados.")
+                else:
+                    st.warning("A coluna 'qtd_veiculos' não foi encontrada na base de frota.")
+
+        with col_g4:
+            st.markdown("##### Acidentes por Condição Meteorológica")
+            if 'condicao_metereologica' in df_filtrado.columns:
+                
+                condicoes_unicas = sorted(df_filtrado['condicao_metereologica'].dropna().unique())
+                
+                condicoes_selecionadas = st.multiselect(
+                    "Filtrar Condição(ões) Meteorológica(s):",
+                    options=condicoes_unicas,
+                    default=[],
+                    placeholder="Selecione para filtrar...",
+                    key="filtro_clima_multiselect"
+                )
+                
+                df_clima = df_filtrado.copy()
+                if condicoes_selecionadas:
+                    df_clima = df_clima[df_clima['condicao_metereologica'].isin(condicoes_selecionadas)]
+                    
+                clima_counts = df_clima['condicao_metereologica'].value_counts().reset_index()
+                clima_counts.columns = ['Condição', 'Total']
+                
+                altura_real_clima = max(300, len(clima_counts) * 30)
+                max_clima = clima_counts['Total'].max() if not clima_counts.empty else 100
+                
+                fig_clima = px.bar(
+                    clima_counts,
+                    x='Total',
+                    y='Condição',
+                    orientation='h',
+                    text='Total',
+                    color_discrete_sequence=[CORES_DASHBOARD['azul_medio']]
+                )
+                
+                fig_clima = aplicar_tema_grafico(fig_clima)
+                
+                fig_clima.update_traces(
+                    textposition='outside', 
+                    cliponaxis=False,
+                    textfont=dict(color=CORES_DASHBOARD['texto_escuro'], size=10)
+                )
+                
+                fig_clima.update_layout(
+                    yaxis={
+                        'categoryorder': 'total ascending',
+                        'tickfont': dict(size=11),
+                        'automargin': True
+                    },
+                    xaxis=dict(
+                        range=[0, max_clima * 1.15],
+                        showgrid=True,
+                        zeroline=False
+                    ),
+                    xaxis_title="",
+                    yaxis_title="",
+                    margin=dict(l=0, r=40, t=10, b=10),
+                    height=altura_real_clima
+                )
+                
+                with st.container(height=380):
+                    st.plotly_chart(fig_clima, use_container_width=True)
+            else:
+                st.warning("Coluna 'condicao_metereologica' não encontrada nos dados.")
+        # =====================================================================
+
         st.markdown("---")
         st.subheader("📍 Mapeamento Geográfico de Ocorrências (Latitude / Longitude)")
 
