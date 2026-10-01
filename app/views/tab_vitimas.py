@@ -35,7 +35,7 @@ def render_tab_vitimas(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
     col_v1, col_v2 = st.columns(2)
 
     with col_v1:
-        st.markdown("##### Distribuição do Estado Físico das Vítimas")
+        st.markdown("##### Distribuição do Estado Físico das Vítimas Pós Acidente")
 
         mapa_colunas = {
             'ilesos': 'Ileso',
@@ -127,7 +127,7 @@ def render_tab_vitimas(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
                 x='uf',
                 y=['total_feridos', 'mortos'],
                 barmode='group',
-                labels={'value': 'Quantidade', 'variable': 'Métrica', 'uf': 'UF'},
+                labels={'value': 'Quantidade', 'variable': 'Métrica', 'uf': 'Estados'},
                 color_discrete_map={
                     'total_feridos': CORES_DASHBOARD['laranja_destaque'],
                     'mortos': CORES_DASHBOARD['vermelho'],

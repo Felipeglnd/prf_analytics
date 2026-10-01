@@ -55,10 +55,10 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
     col_veic1, col_veic2 = st.columns(2)
 
     # ==========================================
-    # Gráfico 1: Distribuição de Acidentes (Paleta Heterogênea)
+    # Gráfico 1: Distribuição de Acidentes
     # ==========================================
     with col_veic1:
-        st.markdown("##### Distribuição de Acidentes por Tipo de Veículo")
+        st.markdown("##### Característica de Acidentes por Tipo de Veículo")
         
         veiculos_g1 = st.multiselect(
             "Filtrar tipo(s) de veículo:",
@@ -101,7 +101,7 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
                 color='Subcategoria',
                 orientation='h',
                 text='Texto_Pct',
-                color_discrete_sequence=px.colors.qualitative.Vivid,  # Paleta heterogênea
+                color_discrete_sequence=px.colors.qualitative.Vivid,
             )
         else:
             df_counts = df_top['Tipo de Veículo'].value_counts().reset_index()
@@ -118,12 +118,13 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
                 color='Tipo de Veículo',
                 orientation='h',
                 text='Texto_Pct',
-                color_discrete_sequence=px.colors.qualitative.Vivid,  # Paleta heterogênea
+                color_discrete_sequence=px.colors.qualitative.Vivid,
             )
 
         num_veiculos_g1 = df_top['Tipo de Veículo'].nunique()
-        altura_calculada_g1 = max(400, num_veiculos_g1 * 35)
+        altura_calculada_g1 = max(350, num_veiculos_g1 * 28)
 
+        fig_veiculo = aplicar_tema_grafico(fig_veiculo)
         fig_veiculo.update_traces(
             textposition='inside',
             insidetextanchor='middle',
@@ -134,7 +135,7 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
             barmode='stack',
             height=altura_calculada_g1,
             xaxis=dict(
-                title='%GT Sum of Index',
+                title='Total',
                 range=[0, 100],
                 ticksuffix='%',
                 showgrid=True,
@@ -154,14 +155,14 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
             ),
         )
 
-        with st.container(height=500):
-            st.plotly_chart(aplicar_tema_grafico(fig_veiculo), use_container_width=True)
+        with st.container(height=480):
+            st.plotly_chart(fig_veiculo, use_container_width=True)
 
     # ==========================================
-    # Gráfico 2: Volume Total por Categoria
+    # Gráfico 2: Volume Total por Categoria (Ajustado)
     # ==========================================
     with col_veic2:
-        st.markdown("##### Volume Total por Categoria de Veículo")
+        st.markdown("##### Volume Total de Acidentes por Categoria de Veículo")
         
         veiculos_g2 = st.multiselect(
             "Filtrar tipo(s) de veículo:",
@@ -190,22 +191,27 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
         )
 
         num_veiculos_g2 = len(top_veic_bar)
-        altura_calculada_g2 = max(400, num_veiculos_g2 * 35)
+        altura_calculada_g2 = max(350, num_veiculos_g2 * 28)
+        max_val_g2 = top_veic_bar['Total'].max() if not top_veic_bar.empty else 0
 
+        fig_veic_bar = aplicar_tema_grafico(fig_veic_bar)
         fig_veic_bar.update_traces(
             textposition='outside',
-            textfont=dict(color=CORES_DASHBOARD.get('texto_escuro', '#0F172A')),
+            cliponaxis=False,
+            textfont=dict(color=CORES_DASHBOARD.get('texto_escuro', '#0F172A'), size=11),
         )
         fig_veic_bar.update_layout(
             height=altura_calculada_g2,
-            yaxis={'categoryorder': 'total ascending'}
+            yaxis={'categoryorder': 'total ascending'},
+            xaxis=dict(range=[0, max_val_g2 * 1.20] if max_val_g2 > 0 else None),
+            margin=dict(l=10, r=50, t=20, b=10)
         )
 
-        with st.container(height=500):
-            st.plotly_chart(aplicar_tema_grafico(fig_veic_bar), use_container_width=True)
+        with st.container(height=480):
+            st.plotly_chart(fig_veic_bar, use_container_width=True)
 
     # ==========================================
-    # Gráfico 3: Marca Mais Presente por Tipo de Veículo
+    # Gráfico 3: Marca Mais Presente por Tipo de Veículo (Ajustado)
     # ==========================================
     st.markdown("---")
     st.markdown("##### Marca Mais Presente em Acidentes por Tipo de Veículo")
@@ -254,18 +260,23 @@ def render_tab_veiculos(df_filtrado, CORES_DASHBOARD, aplicar_tema_grafico):
     )
 
     num_veiculos_g3 = len(df_top_marca)
-    altura_calculada_g3 = max(400, num_veiculos_g3 * 38)
+    altura_calculada_g3 = max(350, num_veiculos_g3 * 28)
+    max_val_g3 = df_top_marca['Total de Acidentes'].max() if not df_top_marca.empty else 0
 
+    fig_marca = aplicar_tema_grafico(fig_marca)
     fig_marca.update_traces(
         textposition='outside',
-        textfont=dict(color=CORES_DASHBOARD.get('texto_escuro', '#0F172A')),
+        cliponaxis=False,
+        textfont=dict(color=CORES_DASHBOARD.get('texto_escuro', '#0F172A'), size=11),
     )
     fig_marca.update_layout(
         height=altura_calculada_g3,
         yaxis={'categoryorder': 'total ascending'},
         xaxis_title="Acidentes da Marca Líder",
-        yaxis_title="Tipo de Veículo"
+        yaxis_title="Tipo de Veículo",
+        xaxis=dict(range=[0, max_val_g3 * 1.35] if max_val_g3 > 0 else None),
+        margin=dict(l=10, r=80, t=20, b=10)
     )
 
-    with st.container(height=500):
-        st.plotly_chart(aplicar_tema_grafico(fig_marca), use_container_width=True)
+    with st.container(height=480):
+        st.plotly_chart(fig_marca, use_container_width=True)

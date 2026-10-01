@@ -247,3 +247,112 @@ def render_tab_acidentes(
         fig_heatmap.update_traces(xgap=2, ygap=2)
         fig_heatmap.update_layout(xaxis_title="Hora do Dia", yaxis_title="", height=380)
         st.plotly_chart(aplicar_tema_grafico(fig_heatmap), use_container_width=True)
+
+    # ==========================================
+    # Nova Seção: Tabela de Km Críticos por Rodovia
+    # ==========================================
+    st.markdown("---")
+    st.markdown("##### Quilômetros (Km) Críticos com Maior Incidência de Acidentes por Rodovia")
+
+    if 'br' in df_filtrado.columns and 'km' in df_filtrado.columns:
+        df_km = df_filtrado.dropna(subset=['br', 'km']).copy()
+
+        if not df_km.empty:
+            df_km['rodovia_fmt'] = "BR-" + df_km['br'].astype(str).str.split('.').str[0].str.zfill(3)
+            df_km['km_num'] = pd.to_numeric(df_km['km'].astype(str).str.replace(',', '.'), errors='coerce')
+            df_km = df_km.dropna(subset=['km_num'])
+
+            if not df_km.empty:
+                df_km['km_int'] = df_km['km_num'].round(0).astype(int)
+
+                col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+
+                with col_f1:
+                    brs_km_unicas = sorted(df_km['rodovia_fmt'].unique())
+                    brs_km_selecionadas = st.multiselect(
+                        "Filtrar Rodovia(s):",
+                        options=brs_km_unicas,
+                        default=[],
+                        placeholder="Todas as rodovias...",
+                        key="filtro_km_brs_multiselect"
+                    )
+
+                with col_f2:
+                    top_n_km = st.selectbox(
+                        "Exibir por Rodovia:",
+                        options=["Top 1", "Top 3", "Top 5", "Top 10", "Todos"],
+                        index=2,
+                        key="filtro_km_top_n"
+                    )
+
+                with col_f3:
+                    min_acidentes = st.number_input(
+                        "Mínimo de Acidentes:",
+                        min_value=1,
+                        value=1,
+                        step=1,
+                        key="filtro_km_min_acidentes"
+                    )
+
+                # Agrupamento por Rodovia e Quilômetro
+                agg_dict = {'km_num': 'count'}
+                if 'mortos' in df_km.columns:
+                    agg_dict['mortos'] = 'sum'
+                if 'feridos_graves' in df_km.columns:
+                    agg_dict['feridos_graves'] = 'sum'
+
+                df_grouped = df_km.groupby(['rodovia_fmt', 'km_int']).agg(agg_dict).reset_index()
+
+                rename_map = {
+                    'rodovia_fmt': 'Rodovia',
+                    'km_int': 'Quilômetro',
+                    'km_num': 'Total de Acidentes',
+                    'mortos': 'Fatalidades',
+                    'feridos_graves': 'Feridos Graves'
+                }
+                df_grouped.rename(columns=rename_map, inplace=True)
+
+                if brs_km_selecionadas:
+                    df_grouped = df_grouped[df_grouped['Rodovia'].isin(brs_km_selecionadas)]
+
+                if min_acidentes > 1:
+                    df_grouped = df_grouped[df_grouped['Total de Acidentes'] >= min_acidentes]
+
+                # Aplicar Top N por Rodovia
+                if top_n_km != "Todos":
+                    n_val = int(top_n_km.replace("Top ", ""))
+                    df_grouped = (
+                        df_grouped.sort_values(by=['Rodovia', 'Total de Acidentes'], ascending=[True, False])
+                        .groupby('Rodovia')
+                        .head(n_val)
+                    )
+
+                df_grouped = df_grouped.sort_values(by=['Total de Acidentes', 'Rodovia'], ascending=[False, True]).reset_index(drop=True)
+                df_grouped['Trecho / Km'] = df_grouped['Quilômetro'].apply(lambda x: f"Km {x}")
+
+                col_ordem = ['Rodovia', 'Trecho / Km', 'Total de Acidentes']
+                if 'Fatalidades' in df_grouped.columns:
+                    col_ordem.append('Fatalidades')
+                if 'Feridos Graves' in df_grouped.columns:
+                    col_ordem.append('Feridos Graves')
+
+                df_exibir = df_grouped[col_ordem]
+
+                st.dataframe(
+                    df_exibir,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Rodovia": st.column_config.TextColumn("Rodovia"),
+                        "Trecho / Km": st.column_config.TextColumn("Trecho / Km"),
+                        "Total de Acidentes": st.column_config.NumberColumn("Total de Acidentes", format="%d"),
+                        "Fatalidades": st.column_config.NumberColumn("Fatalidades", format="%d"),
+                        "Feridos Graves": st.column_config.NumberColumn("Feridos Graves", format="%d"),
+                    }
+                )
+            else:
+                st.warning("Não há dados válidos de quilometragem para exibição.")
+        else:
+            st.warning("Não há dados de rodovias e quilômetros disponíveis.")
+    else:
+        st.info("Colunas de rodovia (br) e quilômetro (km) não foram encontradas no conjunto de dados.")

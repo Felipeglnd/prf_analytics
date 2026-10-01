@@ -11,7 +11,7 @@ def render_tab_geral(
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
-        st.markdown("##### Evolução Mensal de Acidentes")
+        st.markdown("##### Evolução Mensal de Acidentes ao Longo do Ano")
         if 'mes_num' in df_filtrado.columns and 'ano_base' in df_filtrado.columns:
             evolucao = (
                 df_filtrado.groupby(['mes_num', 'ano_base'])
@@ -80,7 +80,7 @@ def render_tab_geral(
     col_g3, col_g4 = st.columns(2)
 
     with col_g3:
-        st.markdown("##### Taxa de Acidentes vs Frota (por UF)")
+        st.markdown("##### Taxa de Acidentes a cada 10 mil veículos (por UF)")
         st.caption("Acidentes (ID único) a cada 10 mil veículos registrados no estado")
 
         if 'uf' in df_filtrado.columns and not df_frota.empty:
